@@ -1,0 +1,11 @@
+# YOLOv8 People Detection Requirements
+
+# Core dependencies
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Optional but recommended
+# GPU acceleration (install appropriate version for your CUDA)
+# torch>=2.0.0
+# torchvision>=0.15.0
