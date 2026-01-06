@@ -1,0 +1,214 @@
+{
+  "logs": [
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user admin",
+      "metadata": null,
+      "id": "81ddd0f3-a786-48f6-a390-68eb24ae9d4b",
+      "timestamp": "2026-01-01 18:47:25.404464",
+      "user_id": null,
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user ak0347",
+      "metadata": null,
+      "id": "aa8957e6-51ed-4d99-bf6a-9e599b6948fb",
+      "timestamp": "2026-01-01 18:48:06.092586",
+      "user_id": null,
+      "username": "ak0347",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user ak0347",
+      "metadata": null,
+      "id": "276d4c30-55b0-4a5c-b7bd-a562c0155938",
+      "timestamp": "2026-01-01 18:48:07.914404",
+      "user_id": null,
+      "username": "ak0347",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user ak0347",
+      "metadata": null,
+      "id": "347134db-d617-4939-b32a-802d3d2bb3ab",
+      "timestamp": "2026-01-01 18:48:08.150406",
+      "user_id": null,
+      "username": "ak0347",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user ak0347",
+      "metadata": null,
+      "id": "d5149362-988a-4808-9ea2-74206c36c51b",
+      "timestamp": "2026-01-01 18:48:08.348406",
+      "user_id": null,
+      "username": "ak0347",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user ak0347",
+      "metadata": null,
+      "id": "9cec605c-be3c-48b7-9ea2-58f0d0871a83",
+      "timestamp": "2026-01-01 18:48:08.513410",
+      "user_id": null,
+      "username": "ak0347",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_FAILED",
+      "details": "Failed login attempt for user admin",
+      "metadata": null,
+      "id": "6bfea93d-68ab-462e-b043-406d868b1738",
+      "timestamp": "2026-01-01 18:48:57.787510",
+      "user_id": null,
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_SUCCESS",
+      "details": "User admin logged in successfully",
+      "metadata": null,
+      "id": "1490214f-8557-4c44-bd8f-5212cf001386",
+      "timestamp": "2026-01-01 18:49:54.166986",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "CONFIG",
+      "action": "THRESHOLD_UPDATED",
+      "details": "Updated thresholds",
+      "metadata": {
+        "global_threshold": 30
+      },
+      "id": "6d7e66df-9ef3-4dd8-b6b4-61dc9a96c325",
+      "timestamp": "2026-01-01 18:50:47.901831",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGOUT",
+      "details": "User admin logged out",
+      "metadata": null,
+      "id": "a20ba5f5-8b75-4784-81c7-32882aab4e0d",
+      "timestamp": "2026-01-02 18:15:52.431201",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_SUCCESS",
+      "details": "User admin logged in successfully",
+      "metadata": null,
+      "id": "aae05975-a85d-4211-b0e1-9fde17251135",
+      "timestamp": "2026-01-02 18:15:58.135527",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGOUT",
+      "details": "User admin logged out",
+      "metadata": null,
+      "id": "c0f6dd87-b409-4e0b-8e8e-78c85360c74e",
+      "timestamp": "2026-01-02 18:17:17.699812",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_SUCCESS",
+      "details": "User admin logged in successfully",
+      "metadata": null,
+      "id": "c8b26d12-70e7-4c6a-8b3b-72753d519d95",
+      "timestamp": "2026-01-02 18:17:23.942784",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "CONFIG",
+      "action": "ZONE_UPDATED",
+      "details": "Updated zone: Zone_1",
+      "metadata": {
+        "zone_name": "Zone_1",
+        "updates": {
+          "enabled": false
+        }
+      },
+      "id": "85dc43c4-8be2-4bb6-9073-2680beeccf5f",
+      "timestamp": "2026-01-02 18:18:00.363583",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "CONFIG",
+      "action": "ZONE_UPDATED",
+      "details": "Updated zone: Zone_1",
+      "metadata": {
+        "zone_name": "Zone_1",
+        "updates": {
+          "enabled": true
+        }
+      },
+      "id": "506da956-468b-4cca-b1df-24d2c09def6b",
+      "timestamp": "2026-01-02 18:18:02.204260",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGOUT",
+      "details": "User admin logged out",
+      "metadata": null,
+      "id": "de69c531-30ef-45e8-9da6-1862bcd2efbe",
+      "timestamp": "2026-01-02 18:18:28.102659",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGIN_SUCCESS",
+      "details": "User admin logged in successfully",
+      "metadata": null,
+      "id": "98fd4526-2587-42b0-b5e9-f726c9f813ad",
+      "timestamp": "2026-01-02 18:18:34.242722",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    },
+    {
+      "category": "AUTH",
+      "action": "LOGOUT",
+      "details": "User admin logged out",
+      "metadata": null,
+      "id": "c2dfa0a5-b3dd-461b-855e-4c5c9a9c60a4",
+      "timestamp": "2026-01-02 18:19:19.979761",
+      "user_id": "admin-default-001",
+      "username": "admin",
+      "ip_address": "127.0.0.1"
+    }
+  ]
+}

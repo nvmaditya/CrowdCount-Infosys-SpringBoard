@@ -1,6 +1,7 @@
 """
-YOLOv8 People Detection with Tracking and Zone Management
-Detects people in video, assigns unique IDs, and manages polygonal zones
+Integrated People Detector with Dashboard Support
+Extends the original detector to update shared state for the dashboard API.
+This module does not break existing detection logic - it adds dashboard integration.
 """
 
 import cv2
@@ -9,39 +10,55 @@ from ultralytics import YOLO
 from collections import defaultdict
 import json
 from pathlib import Path
+import sys
+import threading
+import time
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from shared_state import shared_state
 
 
-class PeopleDetector:
+class IntegratedPeopleDetector:
     """
-    YOLOv8 People Detection with Tracking and Zone Management.
+    People detector with dashboard integration.
+    Updates shared state after each frame for real-time dashboard updates.
     
     DETECTION QUALITY NOTES:
-    - Use yolov8m.pt or larger for better accuracy
-    - Filters by confidence threshold and box size
+    - Uses yolov8m (medium) model for better accuracy than nano
+    - Filters detections by confidence threshold (default 0.5)
+    - Filters out very small bounding boxes (likely false positives)
+    - Uses BoT-SORT tracker for more stable tracking IDs
     """
     
-    # Detection quality parameters
-    DEFAULT_CONFIDENCE_THRESHOLD = 0.5
-    DEFAULT_MIN_BOX_AREA = 1500
+    # Detection quality parameters - tune these if count is still buggy
+    DEFAULT_CONFIDENCE_THRESHOLD = 0.5  # Minimum confidence to count a detection
+    DEFAULT_MIN_BOX_AREA = 1500  # Minimum bounding box area in pixels (filters tiny detections)
+    DEFAULT_IOU_THRESHOLD = 0.5  # IoU threshold for NMS (lower = fewer overlapping detections)
     
     def __init__(self, model_path='yolov8m.pt', zones_file='zones.json',
-                 conf_threshold=None, min_box_area=None):
+                 conf_threshold=None, min_box_area=None, iou_threshold=None):
         """
         Initialize the people detector with YOLOv8
         
         Args:
-            model_path: Path to YOLOv8 model weights (yolov8m.pt recommended)
+            model_path: Path to YOLOv8 model weights
+                       Recommended: 'yolov8m.pt' (medium) or 'yolov8l.pt' (large) for accuracy
+                       Use 'yolov8n.pt' (nano) or 'yolov8s.pt' (small) for speed
             zones_file: Path to zones configuration JSON file
-            conf_threshold: Minimum confidence to accept detection (0.0-1.0)
+            conf_threshold: Minimum confidence score (0.0-1.0) to accept detection
             min_box_area: Minimum bounding box area in pixels
+            iou_threshold: IoU threshold for non-maximum suppression
         """
         self.model = YOLO(model_path)
         self.zones_file = zones_file
         self.zones = self.load_zones()
         
-        # Detection parameters
+        # Detection quality parameters
         self.conf_threshold = conf_threshold or self.DEFAULT_CONFIDENCE_THRESHOLD
         self.min_box_area = min_box_area or self.DEFAULT_MIN_BOX_AREA
+        self.iou_threshold = iou_threshold or self.DEFAULT_IOU_THRESHOLD
         
         # Track history for smooth tracking
         self.track_history = defaultdict(lambda: [])
@@ -50,12 +67,21 @@ class PeopleDetector:
         self.zone_visitors = defaultdict(set)  # {zone_name: set(track_ids)}
         self.zone_current_count = defaultdict(int)  # {zone_name: current_count}
         
+        # Track ID stabilization - remember recent IDs to handle brief occlusions
+        self.recent_track_ids = {}  # {track_id: last_seen_frame}
+        self.frame_counter = 0
+        self.id_memory_frames = 30  # Remember IDs for this many frames
+        
         # Interactive zone drawing
         self.drawing_mode = False
         self.current_zone_points = []
         
         # Colors for visualization
         self.colors = self.generate_colors(100)
+        
+        # Frame dimensions (will be set on first frame)
+        self.frame_width = 0
+        self.frame_height = 0
         
     def generate_colors(self, n):
         """Generate n distinct colors for visualization"""
@@ -146,6 +172,22 @@ class PeopleDetector:
                 # Add to unique visitors set
                 self.zone_visitors[zone_name].add(track_id)
     
+    def update_shared_state(self, detections):
+        """
+        Update the shared state for dashboard integration.
+        Called after each frame processing.
+        """
+        # Collect person coordinates for heatmap
+        coordinates = [(det['center'][0], det['center'][1]) for det in detections]
+        
+        # Update shared state atomically
+        shared_state.update_counts(
+            total_count=len(detections),
+            zone_counts=dict(self.zone_current_count),
+            zone_visitors=dict(self.zone_visitors),
+            coordinates=coordinates
+        )
+    
     def print_zone_statistics(self):
         """Print detailed zone statistics"""
         print("\n=== Zone Statistics ===")
@@ -234,14 +276,23 @@ class PeopleDetector:
         Returns:
             annotated_frame: Frame with detections drawn
             detections: List of detection dictionaries
+            
+        Quality improvements:
+        - Filters by confidence threshold
+        - Filters by minimum bounding box size
+        - Uses BoT-SORT tracker with optimized parameters
         """
-        # Run YOLOv8 tracking with better parameters
+        self.frame_counter += 1
+        
+        # Run YOLOv8 tracking with optimized parameters
+        # Using BoT-SORT tracker for better ID stability
         results = self.model.track(
             frame, 
             persist=True, 
-            classes=[0],
-            conf=self.conf_threshold,
-            tracker="botsort.yaml",
+            classes=[0],  # Only detect people (class 0)
+            conf=self.conf_threshold,  # Confidence threshold
+            iou=self.iou_threshold,  # IoU threshold for NMS
+            tracker="botsort.yaml",  # Better tracker than default ByteTrack
             verbose=False
         )
         
@@ -259,17 +310,21 @@ class PeopleDetector:
             for box, track_id, conf in zip(boxes, track_ids, confidences):
                 x1, y1, x2, y2 = box.astype(int)
                 
-                # Filter: Skip low confidence
+                # FILTER 1: Skip low confidence detections
+                # (should be handled by model.track conf param, but double-check)
                 if conf < self.conf_threshold:
                     continue
                 
-                # Filter: Skip small boxes
-                box_area = (x2 - x1) * (y2 - y1)
+                # FILTER 2: Skip very small bounding boxes (likely false positives)
+                box_width = x2 - x1
+                box_height = y2 - y1
+                box_area = box_width * box_height
                 if box_area < self.min_box_area:
                     continue
                 
-                # Filter: Skip unrealistic aspect ratios
-                aspect_ratio = (x2 - x1) / max(y2 - y1, 1)
+                # FILTER 3: Skip boxes with unrealistic aspect ratios
+                # People are typically taller than wide (aspect ratio > 0.3)
+                aspect_ratio = box_width / max(box_height, 1)
                 if aspect_ratio > 2.0 or aspect_ratio < 0.15:
                     continue
                 
@@ -277,6 +332,9 @@ class PeopleDetector:
                 center_x = int((x1 + x2) / 2)
                 center_y = int((y1 + y2) / 2)
                 center = (center_x, center_y)
+                
+                # Update track ID memory
+                self.recent_track_ids[track_id] = self.frame_counter
                 
                 # Check which zone(s) person is in
                 zones = self.get_person_zone(center)
@@ -332,13 +390,16 @@ class PeopleDetector:
         # Update zone statistics after all detections
         self.update_zone_statistics(detections)
         
+        # Update shared state for dashboard
+        self.update_shared_state(detections)
+        
         # Draw current zone being created (if in drawing mode)
         if self.drawing_mode:
             annotated_frame = self.draw_current_zone(annotated_frame)
         
         return annotated_frame, detections
     
-    def process_video(self, video_source=0, output_path=None, display=True):
+    def process_video(self, video_source=0, output_path=None, display=True, speed=1.0):
         """
         Process video from source (file or camera)
         
@@ -346,6 +407,8 @@ class PeopleDetector:
             video_source: Video file path or camera index (0 for webcam)
             output_path: Optional path to save output video
             display: Whether to display the video
+            speed: Playback speed multiplier (e.g., 2.0 for 2x speed)
+                   Values > 1.0 skip frames to speed up processing
         """
         cap = cv2.VideoCapture(video_source)
         
@@ -354,18 +417,27 @@ class PeopleDetector:
             return
         
         # Get video properties
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+        
+        # Calculate frame skip for speed control
+        # speed=2.0 means process every 2nd frame
+        frame_skip = max(1, int(speed))
+        
+        # Set frame dimensions in shared state for heatmap
+        shared_state.set_frame_dimensions(self.frame_width, self.frame_height)
+        shared_state.set_detection_running(True)
         
         # Setup video writer if output path specified
         writer = None
         if output_path:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            writer = cv2.VideoWriter(output_path, fourcc, fps, (self.frame_width, self.frame_height))
         
         print(f"Processing video: {video_source}")
-        print(f"Resolution: {width}x{height} @ {fps} FPS")
+        print(f"Resolution: {self.frame_width}x{self.frame_height} @ {fps} FPS")
+        print(f"Speed: {speed}x (processing every {frame_skip} frame(s))")
         print("\n=== Controls ===")
         print("Press 'q' to quit")
         print("Press 's' to save zones")
@@ -375,19 +447,33 @@ class PeopleDetector:
         print("  - Middle Click: Remove last point")
         print("Press 'c' to clear current zone")
         print("Press 'z' to print zone statistics")
+        print("Press '+' to increase speed")
+        print("Press '-' to decrease speed")
         print("================\n")
+        print("Dashboard available at: http://localhost:8000/static/index.html")
         
-        window_name = 'YOLOv8 People Detection'
-        cv2.namedWindow(window_name)
-        cv2.setMouseCallback(window_name, self.mouse_callback)
+        window_name = 'YOLOv8 People Detection (Dashboard Enabled)'
+        
+        if display:
+            cv2.namedWindow(window_name)
+            cv2.setMouseCallback(window_name, self.mouse_callback)
         
         frame_count = 0
+        frames_read = 0
         
         try:
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    # Loop video for continuous demo
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+                
+                frames_read += 1
+                
+                # Skip frames for speed control
+                if frames_read % frame_skip != 0:
+                    continue
                 
                 frame_count += 1
                 
@@ -395,22 +481,19 @@ class PeopleDetector:
                 annotated_frame, detections = self.detect_people(frame)
                 
                 # Add frame info
-                info_text = f"Frame: {frame_count} | People: {len(detections)}"
+                info_text = f"Frame: {frame_count} | People: {len(detections)} | Speed: {frame_skip}x"
                 cv2.putText(annotated_frame, info_text, (10, 30),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                # Add dashboard indicator
+                cv2.putText(annotated_frame, "Dashboard: http://localhost:8000", (10, 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
                 
                 # Add drawing mode indicator
                 if self.drawing_mode:
                     mode_text = f"DRAWING MODE | Points: {len(self.current_zone_points)}"
-                    cv2.putText(annotated_frame, mode_text, (10, 60),
+                    cv2.putText(annotated_frame, mode_text, (10, 90),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                
-                # Display detections info
-                if len(detections) > 0 and frame_count % 30 == 0:  # Print every 30 frames to reduce clutter
-                    print(f"Frame {frame_count}: {len(detections)} people detected")
-                    for det in detections:
-                        zone_info = f" in {det['zones']}" if det['zones'] else ""
-                        print(f"  - ID {det['id']}: conf={det['confidence']:.2f}{zone_info}")
                 
                 # Write frame to output
                 if writer:
@@ -420,6 +503,7 @@ class PeopleDetector:
                 if display:
                     cv2.imshow(window_name, annotated_frame)
                     
+                    # Use waitKey(1) for fastest processing
                     key = cv2.waitKey(1) & 0xFF
                     if key == ord('q'):
                         print("Quitting...")
@@ -431,14 +515,20 @@ class PeopleDetector:
                         self.drawing_mode = not self.drawing_mode
                         mode = "ON" if self.drawing_mode else "OFF"
                         print(f"Drawing mode: {mode}")
+                    elif key == ord('+') or key == ord('='):
+                        frame_skip = min(frame_skip + 1, 10)
+                        print(f"Speed increased to {frame_skip}x")
+                    elif key == ord('-') or key == ord('_'):
+                        frame_skip = max(frame_skip - 1, 1)
+                        print(f"Speed decreased to {frame_skip}x")
                     elif key == ord('c'):
                         self.current_zone_points = []
                         print("Current zone cleared")
                     elif key == ord('z'):
                         self.print_zone_statistics()
-                        print("Zones saved!")
         
         finally:
+            shared_state.set_detection_running(False)
             cap.release()
             if writer:
                 writer.release()
@@ -448,26 +538,41 @@ class PeopleDetector:
             print(f"\nProcessing complete. Total frames: {frame_count}")
 
 
+def run_detector(video_source, model_path, zones_file, output_path, display):
+    """Run the detector in a separate thread"""
+    detector = IntegratedPeopleDetector(model_path=model_path, zones_file=zones_file)
+    detector.process_video(
+        video_source=video_source,
+        output_path=output_path,
+        display=display
+    )
+
+
 def main():
-    """Main function to run people detection"""
+    """Main function to run people detection with dashboard"""
     import argparse
     
     parser = argparse.ArgumentParser(
-        description='YOLOv8 People Detection with Zone Management',
+        description='YOLOv8 People Detection with Dashboard',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Model Options (accuracy vs speed):
-  yolov8n.pt  - Nano (fastest, least accurate) - NOT recommended
+  yolov8n.pt  - Nano (fastest, least accurate) - NOT recommended for counting
   yolov8s.pt  - Small (fast, moderate accuracy)
-  yolov8m.pt  - Medium (balanced) - RECOMMENDED
+  yolov8m.pt  - Medium (balanced) - RECOMMENDED default
   yolov8l.pt  - Large (slower, more accurate)
   yolov8x.pt  - Extra Large (slowest, most accurate)
+
+If count is still buggy, try:
+  --conf 0.6        Increase confidence threshold (default 0.5)
+  --min-area 2000   Increase minimum box area (default 1500)
+  --model yolov8l.pt  Use a larger model
         """
     )
     parser.add_argument('--source', type=str, default='Camera-Video.mp4',
                        help='Video source (0 for webcam, or path to video file)')
     parser.add_argument('--model', type=str, default='yolov8m.pt',
-                       help='YOLOv8 model path (default: yolov8m.pt)')
+                       help='YOLOv8 model path (default: yolov8m.pt for better accuracy)')
     parser.add_argument('--zones', type=str, default='zones.json',
                        help='Path to zones configuration file')
     parser.add_argument('--output', type=str, default=None,
@@ -475,9 +580,11 @@ Model Options (accuracy vs speed):
     parser.add_argument('--no-display', action='store_true',
                        help='Disable video display')
     parser.add_argument('--conf', type=float, default=0.5,
-                       help='Confidence threshold (0.0-1.0)')
+                       help='Confidence threshold (0.0-1.0, higher = fewer false positives)')
     parser.add_argument('--min-area', type=int, default=1500,
                        help='Minimum bounding box area in pixels')
+    parser.add_argument('--iou', type=float, default=0.5,
+                       help='IoU threshold for NMS (lower = fewer overlapping detections)')
     
     args = parser.parse_args()
     
@@ -487,12 +594,20 @@ Model Options (accuracy vs speed):
     except ValueError:
         video_source = args.source
     
-    # Initialize detector with parameters
-    detector = PeopleDetector(
+    print(f"\n=== Detection Configuration ===")
+    print(f"Model: {args.model}")
+    print(f"Confidence threshold: {args.conf}")
+    print(f"Min box area: {args.min_area} px")
+    print(f"IoU threshold: {args.iou}")
+    print(f"================================\n")
+    
+    # Initialize detector with custom parameters
+    detector = IntegratedPeopleDetector(
         model_path=args.model, 
         zones_file=args.zones,
         conf_threshold=args.conf,
-        min_box_area=args.min_area
+        min_box_area=args.min_area,
+        iou_threshold=args.iou
     )
     
     # Process video
