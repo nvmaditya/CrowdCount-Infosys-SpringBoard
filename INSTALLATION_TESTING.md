@@ -218,6 +218,27 @@ curl http://localhost:8000/admin/users \
 
 ## Automated Test Script
 
+### Python Automated Smoke Tests
+
+Run these from the repository root:
+
+```bash
+# Standard library test runner
+python -m unittest discover -v
+
+# Optional: run the same tests with pytest
+python -m pytest -q
+```
+
+Current automated coverage (`tests/test_api_smoke.py`):
+
+- API root health endpoint (`/`)
+- count and zone summary endpoints (`/count`, `/zones`)
+- alert edge-trigger behavior (`/alerts`)
+- CSV export endpoint (`/export/csv`)
+
+These tests are lightweight and do not require running the detector or loading YOLO models.
+
 Save as `test_admin_panel.sh`:
 
 ```bash
@@ -374,87 +395,87 @@ Run with:
 
 ### Login Page Testing
 
--   [ ] Page loads without errors
--   [ ] Username field accepts input
--   [ ] Password field accepts input
--   [ ] Password toggle works (eye icon)
--   [ ] Remember me checkbox works
--   [ ] Login with correct credentials succeeds
--   [ ] Login with wrong credentials shows error
--   [ ] Redirects to admin panel after login
--   [ ] "Back to Dashboard" link works
+- [ ] Page loads without errors
+- [ ] Username field accepts input
+- [ ] Password field accepts input
+- [ ] Password toggle works (eye icon)
+- [ ] Remember me checkbox works
+- [ ] Login with correct credentials succeeds
+- [ ] Login with wrong credentials shows error
+- [ ] Redirects to admin panel after login
+- [ ] "Back to Dashboard" link works
 
 ### Admin Panel Testing
 
--   [ ] Admin panel loads for admin user
--   [ ] Sidebar shows all 7 sections
--   [ ] Username displays in sidebar
--   [ ] Dashboard section shows stats
--   [ ] Recent activity displays
+- [ ] Admin panel loads for admin user
+- [ ] Sidebar shows all 7 sections
+- [ ] Username displays in sidebar
+- [ ] Dashboard section shows stats
+- [ ] Recent activity displays
 
 #### User Management
 
--   [ ] User table loads
--   [ ] Shows default admin user
--   [ ] "Add User" button opens modal
--   [ ] Can create new user
--   [ ] New user appears in table
--   [ ] Cannot delete own account
--   [ ] Can delete other users
+- [ ] User table loads
+- [ ] Shows default admin user
+- [ ] "Add User" button opens modal
+- [ ] Can create new user
+- [ ] New user appears in table
+- [ ] Cannot delete own account
+- [ ] Can delete other users
 
 #### Camera Management
 
--   [ ] Camera list displays
--   [ ] "Add Camera" button opens modal
--   [ ] Can add new camera
--   [ ] Camera card displays with info
--   [ ] Enable/disable toggle works
--   [ ] Can delete camera
+- [ ] Camera list displays
+- [ ] "Add Camera" button opens modal
+- [ ] Can add new camera
+- [ ] Camera card displays with info
+- [ ] Enable/disable toggle works
+- [ ] Can delete camera
 
 #### Zone Management
 
--   [ ] Zone list displays
--   [ ] Zone cards show info
--   [ ] Enable/disable toggle works
--   [ ] Can delete zones
--   [ ] Info modal explains zone creation
+- [ ] Zone list displays
+- [ ] Zone cards show info
+- [ ] Enable/disable toggle works
+- [ ] Can delete zones
+- [ ] Info modal explains zone creation
 
 #### Threshold Configuration
 
--   [ ] Global threshold input works
--   [ ] Can update global threshold
--   [ ] Zone thresholds display
--   [ ] Can update zone thresholds
--   [ ] Success notification appears
+- [ ] Global threshold input works
+- [ ] Can update global threshold
+- [ ] Zone thresholds display
+- [ ] Can update zone thresholds
+- [ ] Success notification appears
 
 #### Activity Logs
 
--   [ ] Logs display in chronological order
--   [ ] Category filter works
--   [ ] Date filters work
--   [ ] "Clear Filters" button works
--   [ ] Export CSV button works
--   [ ] Export PDF button works
--   [ ] Logs are color-coded by category
+- [ ] Logs display in chronological order
+- [ ] Category filter works
+- [ ] Date filters work
+- [ ] "Clear Filters" button works
+- [ ] Export CSV button works
+- [ ] Export PDF button works
+- [ ] Logs are color-coded by category
 
 #### Alert History
 
--   [ ] Alert table displays
--   [ ] Shows timestamp and details
--   [ ] Filter by type works
--   [ ] Acknowledged status displays
+- [ ] Alert table displays
+- [ ] Shows timestamp and details
+- [ ] Filter by type works
+- [ ] Acknowledged status displays
 
 ### Main Dashboard Testing
 
--   [ ] Dashboard loads for unauthenticated users
--   [ ] "Login" button visible when not logged in
--   [ ] After login, username displays
--   [ ] "Logout" button visible when logged in
--   [ ] "Admin" button visible for admin users
--   [ ] "Admin" button hidden for regular users
--   [ ] All existing features still work
--   [ ] Charts still update
--   [ ] Heatmap still loads
+- [ ] Dashboard loads for unauthenticated users
+- [ ] "Login" button visible when not logged in
+- [ ] After login, username displays
+- [ ] "Logout" button visible when logged in
+- [ ] "Admin" button visible for admin users
+- [ ] "Admin" button hidden for regular users
+- [ ] All existing features still work
+- [ ] Charts still update
+- [ ] Heatmap still loads
 
 ---
 
