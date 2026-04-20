@@ -9,15 +9,24 @@ import numpy as np
 from ultralytics import YOLO
 from collections import defaultdict
 import json
+import os
 from pathlib import Path
 import sys
 import threading
 import time
+from time import perf_counter
+from urllib.request import urlopen
+from urllib.error import URLError
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared_state import shared_state
+
+try:
+    from detector.metrics_logger import MetricsLogger
+except Exception:  # pragma: no cover
+    MetricsLogger = None  # type: ignore
 
 
 class IntegratedPeopleDetector:
@@ -82,6 +91,19 @@ class IntegratedPeopleDetector:
         # Frame dimensions (will be set on first frame)
         self.frame_width = 0
         self.frame_height = 0
+
+        # Optional metrics logging (enabled via process_video args)
+        self._metrics_logger = None
+        self._last_infer_ms = 0.0
+        self._last_post_ms = 0.0
+
+    def _is_dashboard_reachable(self, dashboard_url):
+        """Check if dashboard endpoint is reachable before advertising it as available."""
+        try:
+            with urlopen(dashboard_url, timeout=1.0) as response:
+                return 200 <= response.status < 400
+        except (URLError, TimeoutError, ValueError):
+            return False
         
     def generate_colors(self, n):
         """Generate n distinct colors for visualization"""
@@ -286,6 +308,7 @@ class IntegratedPeopleDetector:
         
         # Run YOLOv8 tracking with optimized parameters
         # Using BoT-SORT tracker for better ID stability
+        infer_start = perf_counter()
         results = self.model.track(
             frame, 
             persist=True, 
@@ -295,6 +318,8 @@ class IntegratedPeopleDetector:
             tracker="botsort.yaml",  # Better tracker than default ByteTrack
             verbose=False
         )
+        infer_end = perf_counter()
+        self._last_infer_ms = (infer_end - infer_start) * 1000.0
         
         detections = []
         annotated_frame = frame.copy()
@@ -392,6 +417,36 @@ class IntegratedPeopleDetector:
         
         # Update shared state for dashboard
         self.update_shared_state(detections)
+
+        # Post-processing time (everything after inference in this method)
+        post_end = perf_counter()
+        self._last_post_ms = (post_end - infer_end) * 1000.0
+
+        # Metrics: use SharedState's per-frame timestamp (set during update_shared_state)
+        if self._metrics_logger is not None:
+            ts = (
+                shared_state.get_last_update().isoformat()
+                if shared_state.get_last_update()
+                else time.strftime("%Y-%m-%dT%H:%M:%S")
+            )
+            for det in detections:
+                track_id = int(det["id"])
+                self._metrics_logger.log_detection(
+                    timestamp=ts,
+                    frame_index=self.frame_counter,
+                    track_id=track_id,
+                    confidence=float(det["confidence"]),
+                    zones=list(det["zones"]),
+                    bbox=list(det["bbox"]),
+                    center=det["center"],
+                )
+                self._metrics_logger.note_track_seen(
+                    timestamp=ts,
+                    frame_index=self.frame_counter,
+                    track_id=track_id,
+                    confidence=float(det["confidence"]),
+                    trail_len=len(self.track_history[track_id]),
+                )
         
         # Draw current zone being created (if in drawing mode)
         if self.drawing_mode:
@@ -399,7 +454,16 @@ class IntegratedPeopleDetector:
         
         return annotated_frame, detections
     
-    def process_video(self, video_source=0, output_path=None, display=True, speed=1.0):
+    def process_video(
+        self,
+        video_source=0,
+        output_path=None,
+        display=True,
+        speed=1.0,
+        metrics_out_dir=None,
+        max_frames=None,
+        history_dump_limit=300,
+    ):
         """
         Process video from source (file or camera)
         
@@ -450,7 +514,12 @@ class IntegratedPeopleDetector:
         print("Press '+' to increase speed")
         print("Press '-' to decrease speed")
         print("================\n")
-        print("Dashboard available at: http://localhost:8000/static/index.html")
+        dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:8080/static/index.html")
+        if self._is_dashboard_reachable(dashboard_url):
+            print(f"Dashboard available at: {dashboard_url}")
+        else:
+            print(f"Dashboard server not detected at: {dashboard_url}")
+            print("Start it with: python run_app.py --server-only")
         
         window_name = 'YOLOv8 People Detection (Dashboard Enabled)'
         
@@ -460,14 +529,34 @@ class IntegratedPeopleDetector:
         
         frame_count = 0
         frames_read = 0
+
+        # Metrics logging (optional)
+        if metrics_out_dir is not None:
+            if MetricsLogger is None:
+                print("Warning: metrics logging requested but MetricsLogger import failed")
+            else:
+                zone_names = [
+                    z.get("name", "Unnamed")
+                    for z in self.zones.get("zones", [])
+                    if z.get("enabled", True)
+                ]
+                try:
+                    self._metrics_logger = MetricsLogger(Path(metrics_out_dir), zone_names)
+                    print(f"Metrics logging enabled -> {metrics_out_dir}")
+                except Exception as exc:
+                    print(f"Warning: failed to initialize metrics logging: {exc}")
+                    self._metrics_logger = None
         
         try:
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
-                    # Loop video for continuous demo
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
+                    if display:
+                        # Loop video for continuous demo
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
+                    # Headless runs should terminate cleanly at EOF
+                    break
                 
                 frames_read += 1
                 
@@ -476,9 +565,40 @@ class IntegratedPeopleDetector:
                     continue
                 
                 frame_count += 1
+
+                frame_start = perf_counter()
                 
                 # Detect people
                 annotated_frame, detections = self.detect_people(frame)
+
+                frame_end = perf_counter()
+                frame_ms = (frame_end - frame_start) * 1000.0
+                fps_inst = (1000.0 / frame_ms) if frame_ms > 0 else 0.0
+
+                if self._metrics_logger is not None:
+                    ts = shared_state.get_last_update().isoformat() if shared_state.get_last_update() else time.strftime(
+                        "%Y-%m-%dT%H:%M:%S"
+                    )
+                    self._metrics_logger.log_frame_timing(
+                        timestamp=ts,
+                        frame_index=self.frame_counter,
+                        frames_read=frames_read,
+                        source_fps=int(fps),
+                        frame_width=int(self.frame_width),
+                        frame_height=int(self.frame_height),
+                        speed_frame_skip=int(frame_skip),
+                        people_count=len(detections),
+                        infer_ms=float(self._last_infer_ms),
+                        post_ms=float(self._last_post_ms),
+                        frame_ms=float(frame_ms),
+                        fps_inst=float(fps_inst),
+                    )
+                    self._metrics_logger.log_zone_counts(
+                        timestamp=ts,
+                        frame_index=self.frame_counter,
+                        total_count=len(detections),
+                        zone_counts=dict(self.zone_current_count),
+                    )
                 
                 # Add frame info
                 info_text = f"Frame: {frame_count} | People: {len(detections)} | Speed: {frame_skip}x"
@@ -526,6 +646,10 @@ class IntegratedPeopleDetector:
                         print("Current zone cleared")
                     elif key == ord('z'):
                         self.print_zone_statistics()
+
+                if max_frames is not None and frame_count >= int(max_frames):
+                    print(f"Reached max_frames={max_frames}; stopping.")
+                    break
         
         finally:
             shared_state.set_detection_running(False)
@@ -534,6 +658,16 @@ class IntegratedPeopleDetector:
                 writer.release()
             if display:
                 cv2.destroyAllWindows()
+
+            # Flush metrics outputs at end of run
+            if self._metrics_logger is not None:
+                try:
+                    self._metrics_logger.write_track_summaries()
+                    history = shared_state.get_history(int(history_dump_limit))
+                    self._metrics_logger.write_history_dump({"history": history, "count": len(history)})
+                    self._metrics_logger.close()
+                except Exception as exc:
+                    print(f"Warning: failed to finalize metrics outputs: {exc}")
             
             print(f"\nProcessing complete. Total frames: {frame_count}")
 
