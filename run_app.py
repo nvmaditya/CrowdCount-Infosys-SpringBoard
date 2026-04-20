@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 
-def run_api_server(host='0.0.0.0', port=8000):
+def run_api_server(host='0.0.0.0', port=8080):
     """Run the FastAPI server"""
     import uvicorn
     from backend.api import app
@@ -33,8 +33,9 @@ def run_api_server(host='0.0.0.0', port=8000):
     )
 
 
-def run_detector(video_source, model_path, zones_file, display, 
-                 conf_threshold=0.5, min_box_area=1500, iou_threshold=0.5, speed=1.0):
+def run_detector(video_source, model_path, zones_file, display,
+                 conf_threshold=0.5, min_box_area=1500, iou_threshold=0.5, speed=1.0,
+                 dashboard_port=8080, metrics_out_dir=None, max_frames=None):
     """Run the people detector"""
     from detector.integrated_detector import IntegratedPeopleDetector
     
@@ -45,6 +46,9 @@ def run_detector(video_source, model_path, zones_file, display,
     print(f"Confidence: {conf_threshold} | Min Area: {min_box_area}")
     print(f"Speed: {speed}x")
     print(f"{'='*50}\n")
+
+    # Share dashboard URL with detector so it prints the correct endpoint.
+    os.environ["DASHBOARD_URL"] = f"http://localhost:{dashboard_port}/static/index.html"
     
     # Small delay to let server start
     time.sleep(2)
@@ -60,7 +64,9 @@ def run_detector(video_source, model_path, zones_file, display,
         video_source=video_source,
         output_path=None,
         display=display,
-        speed=speed
+        speed=speed,
+        metrics_out_dir=metrics_out_dir,
+        max_frames=max_frames,
     )
 
 
@@ -88,7 +94,7 @@ Examples:
                        help='Path to zones configuration file')
     parser.add_argument('--host', type=str, default='0.0.0.0',
                        help='API server host')
-    parser.add_argument('--port', type=int, default=8000,
+    parser.add_argument('--port', type=int, default=8080,
                        help='API server port')
     parser.add_argument('--no-display', action='store_true',
                        help='Disable video display window')
@@ -108,6 +114,12 @@ Examples:
     # Speed control
     parser.add_argument('--speed', type=float, default=1.0,
                        help='Video playback speed multiplier (e.g., 2.0 for 2x speed)')
+
+    # Metrics logging (for paper plots)
+    parser.add_argument('--metrics-out', type=str, default=None,
+                       help='Directory to write run metrics CSV/JSON (confidence, FPS, zones, track lifetimes)')
+    parser.add_argument('--max-frames', type=int, default=None,
+                       help='Stop after this many processed frames (after frame skipping)')
     
     args = parser.parse_args()
     
@@ -135,7 +147,8 @@ Examples:
     elif args.detector_only:
         # Run only the detector
         run_detector(video_source, args.model, args.zones, not args.no_display,
-                     args.conf, args.min_area, args.iou, args.speed)
+                     args.conf, args.min_area, args.iou, args.speed,
+                     8080, args.metrics_out, args.max_frames)
     else:
         # Run both - server in background thread, detector in main thread
         server_thread = threading.Thread(
@@ -148,7 +161,8 @@ Examples:
         # Run detector in main thread (needs to handle OpenCV window)
         try:
             run_detector(video_source, args.model, args.zones, not args.no_display,
-                         args.conf, args.min_area, args.iou, args.speed)
+                         args.conf, args.min_area, args.iou, args.speed, args.port,
+                         args.metrics_out, args.max_frames)
         except KeyboardInterrupt:
             print("\nShutting down...")
         

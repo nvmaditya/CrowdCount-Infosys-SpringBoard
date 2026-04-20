@@ -1,0 +1,79 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / tooling
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Build / cache
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# Data / artifacts
+outputs/
+runs/
+*.pt
+*.onnx
+*.engine
+*.bin
+*.xml
+*.mp4
+*.avi
+
+# App runtime state (auto-generated)
+data/*.json
+
+# Local project clutter in this workspace root (not part of the repo)
+CameraFeed/
+config/
+models/
+utils/
+venv/
+outputs/
+
+# Other legacy files in this workspace root
+crowd_count_*.py
+main.py
+verify_setup.py
+requirements_crowd.txt
+QUICKSTART.md
+
+# Paper outputs (generated)
+paper/figures/
+paper/data/*.csv
+paper/data/sample_run/
+paper/*.pdf
+
+# Local Copilot/agent artifacts
+.github/agents/
+RESEARCH-ASSISTANT-SKILL.md
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# System
+.DS_Store
+Thumbs.db

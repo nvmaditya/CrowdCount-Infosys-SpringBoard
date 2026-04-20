@@ -43,7 +43,7 @@ except ImportError:
 from shared_state import shared_state
 
 # Import admin router
-from backend.admin import router as admin_router
+from backend.admin import router as admin_router, _load_config
 
 
 # Create FastAPI app
@@ -55,6 +55,26 @@ app = FastAPI(
 
 # Include admin router
 app.include_router(admin_router)
+
+
+@app.on_event("startup")
+async def _startup_load_thresholds():
+    """Load persisted thresholds into shared_state on API startup."""
+    try:
+        config = _load_config()
+        thresholds = config.get("thresholds", {}) if isinstance(config, dict) else {}
+
+        global_threshold = thresholds.get("global_threshold")
+        if isinstance(global_threshold, int):
+            shared_state.set_global_threshold(global_threshold)
+
+        zone_thresholds = thresholds.get("zone_thresholds")
+        if isinstance(zone_thresholds, dict):
+            for zone_name, threshold in zone_thresholds.items():
+                if isinstance(zone_name, str) and isinstance(threshold, int):
+                    shared_state.set_zone_threshold(zone_name, threshold)
+    except Exception as exc:
+        print(f"Warning: failed to load thresholds from config.json: {exc}")
 
 # Enable CORS for frontend access
 app.add_middleware(
@@ -149,7 +169,7 @@ async def get_alerts():
     Get current alert status.
     Returns active alerts if any thresholds are exceeded.
     """
-    alerts = shared_state.check_alerts()
+    alerts = shared_state.check_alerts_and_record()
     return {
         "alerts": alerts,
         "has_alerts": len(alerts) > 0,
@@ -445,7 +465,7 @@ if frontend_path.exists():
 
 # ==================== Server Runner ====================
 
-def run_server(host: str = "0.0.0.0", port: int = 8000):
+def run_server(host: str = "0.0.0.0", port: int = 8080):
     """Run the FastAPI server"""
     uvicorn.run(app, host=host, port=port)
 
@@ -455,7 +475,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description='People Detection API Server')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind to')
-    parser.add_argument('--port', type=int, default=8000, help='Port to bind to')
+    parser.add_argument('--port', type=int, default=8080, help='Port to bind to')
     
     args = parser.parse_args()
     run_server(host=args.host, port=args.port)

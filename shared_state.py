@@ -7,7 +7,7 @@ Thread-safe implementation using locks for concurrent access.
 import threading
 from collections import deque
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Set
 import numpy as np
 import cv2
 
@@ -51,6 +51,9 @@ class SharedState:
         # Alert configuration
         self._global_threshold = 50  # Default global threshold
         self._zone_thresholds: Dict[str, int] = {}  # Per-zone thresholds
+
+        # Track which alerts are currently active (to avoid repeated persistence)
+        self._active_alert_keys: Set[str] = set()
         
         # Last update timestamp
         self._last_update: Optional[datetime] = None
@@ -178,33 +181,65 @@ class SharedState:
         with self._state_lock:
             return self._zone_thresholds.get(zone_name)
     
-    def check_alerts(self) -> Dict[str, dict]:
-        """Check all thresholds and return active alerts"""
-        with self._state_lock:
-            alerts = {}
-            
-            # Check global threshold
-            if self._total_count > self._global_threshold:
-                alerts['global'] = {
-                    'type': 'global',
-                    'threshold': self._global_threshold,
-                    'current': self._total_count,
+    def _compute_alerts_unlocked(self) -> Dict[str, dict]:
+        """Compute alerts without acquiring the state lock (caller must hold it)."""
+        alerts: Dict[str, dict] = {}
+
+        # Check global threshold
+        if self._total_count > self._global_threshold:
+            alerts['global'] = {
+                'type': 'global',
+                'threshold': self._global_threshold,
+                'current': self._total_count,
+                'exceeded': True
+            }
+
+        # Check zone thresholds
+        for zone_name, current in self._zone_counts.items():
+            threshold = self._zone_thresholds.get(zone_name)
+            if threshold and current > threshold:
+                alerts[zone_name] = {
+                    'type': 'zone',
+                    'zone': zone_name,
+                    'threshold': threshold,
+                    'current': current,
                     'exceeded': True
                 }
-            
-            # Check zone thresholds
-            for zone_name, current in self._zone_counts.items():
-                threshold = self._zone_thresholds.get(zone_name)
-                if threshold and current > threshold:
-                    alerts[zone_name] = {
-                        'type': 'zone',
-                        'zone': zone_name,
-                        'threshold': threshold,
-                        'current': current,
-                        'exceeded': True
-                    }
-            
-            return alerts
+
+        return alerts
+
+    def check_alerts(self) -> Dict[str, dict]:
+        """Check all thresholds and return active alerts (no side effects)."""
+        with self._state_lock:
+            return self._compute_alerts_unlocked()
+
+    def check_alerts_and_record(self) -> Dict[str, dict]:
+        """Check thresholds and persist newly-triggered alerts (edge-triggered)."""
+        to_record: List[Tuple[str, int, int]] = []
+        with self._state_lock:
+            alerts = self._compute_alerts_unlocked()
+            current_keys = set(alerts.keys())
+
+            newly_active = current_keys - self._active_alert_keys
+            for alert_key in newly_active:
+                alert = alerts.get(alert_key, {})
+                threshold = alert.get('threshold')
+                current = alert.get('current')
+                if isinstance(threshold, int) and isinstance(current, int):
+                    to_record.append((str(alert_key), threshold, current))
+
+            # Update active keys for edge-triggering
+            self._active_alert_keys = current_keys
+
+        for alert_type, threshold, actual_count in to_record:
+            try:
+                from backend.logging_service import record_alert
+                record_alert(alert_type=alert_type, threshold=threshold, actual_count=actual_count)
+            except Exception:
+                # Do not crash detection/API if persistence fails
+                continue
+
+        return alerts
     
     def set_detection_running(self, running: bool):
         """Set detection running status"""
